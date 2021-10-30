@@ -3,22 +3,26 @@ import transformers
 
 
 class DATALoader:
-    def __init__(self, data, target, max_length):
-        self.data = data
+    def __init__(self, data1, data2, target, max_length):
+        self.data1 = data1
+        self.data2 = data2
         self.target = target  # make sure to convert the target into numerical values
         self.tokeniser = transformers.BertTokenizer.from_pretrained('bert-base-cased')
         self.max_length = max_length
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data1)
 
     def __getitem__(self, item):
-        data = str(self.data[item])
-        data = " ".join(data.split())
+        data1 = str(self.data1[item])
+        data1 = " ".join(data1.split())
+
+        data2 = str(self.data2[item])
+        data2 = " ".join(data2.split())
 
         inputs = self.tokeniser.encode_plus(
-            data,
-            None,
+            data1,
+            data2,
             add_special_tokens=True,
             max_length=self.max_length,
             pad_to_max_length=True

@@ -22,7 +22,7 @@ from test import eval_func
 from train import train_func
 
 def run():
-    df = pd.read_json('./data/snli_1.0_train.jsonl', lines=True)
+    df = pd.read_json('data/snli_1.0/snli_1.0_dev.jsonl', lines=True)
     data = pd.DataFrame({
         'sentence1': df['sentence1'],
         'sentence2': df['sentence2'],
@@ -38,7 +38,8 @@ def run():
     df_valid = df_valid.reset_index(drop=True)
 
     train_dataset = DATALoader(
-        data=df_train.text.values,
+        data1=df_train.sentence1.values,
+        data2=df_train.sentence2.values,
         target=df_train.label.values,
         max_length=512
     )
@@ -50,7 +51,8 @@ def run():
     )
 
     val_dataset = DATALoader(
-        data=df_valid.text.values,
+        data1=df_valid.sentence1.values,
+        data2=df_valid.sentence2.values,
         target=df_valid.label.values,
         max_length=512
     )
@@ -61,7 +63,10 @@ def run():
         num_workers=1,
     )
 
-    device = torch.device("cuda")
+    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+
     model = BERTClassification()
 
     param_optimizer = list(model.named_parameters())
