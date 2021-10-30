@@ -20,23 +20,28 @@ class DATALoader:
         data2 = str(self.data2[item])
         data2 = " ".join(data2.split())
 
-        inputs = self.tokeniser.encode_plus(
+        inputs = self.tokeniser(
             data1,
             data2,
             add_special_tokens=True,
             max_length=self.max_length,
-            pad_to_max_length=True
-
+            padding='max_length',
+            truncation=True
+            # return_tensors='pt'
         )
 
         ids = inputs["input_ids"]
         mask = inputs['attention_mask']
         token_type_ids = inputs["token_type_ids"]
 
-        padding_length = self.max_length - len(ids)
-        ids = ids + ([0] * padding_length)
-        mask = mask + ([0] * padding_length)
-        token_type_ids = token_type_ids + ([0] * padding_length)
+        # padding_length = self.max_length - len(ids)
+        # ids = ids + ([0] * padding_length)
+        # mask = mask + ([0] * padding_length)
+        # token_type_ids = token_type_ids + ([0] * padding_length)
+
+        # ids = ids[0] + ids[1]
+        # mask = mask[0] + mask[1]
+        # token_type_ids = token_type_ids[0] + token_type_ids[1]
 
         return {
             'ids': torch.tensor(ids, dtype=torch.long),

@@ -133,3 +133,4 @@ semanticTextSimilarity/.idea/
 .idea/
 .DS_Store
 data/
+models/

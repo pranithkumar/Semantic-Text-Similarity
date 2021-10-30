@@ -23,11 +23,11 @@ def eval_func(data_loader, model, device):
 
             output = model(
                 ids=ids,
-                masks = mask,
+                mask = mask,
                 token_type_ids = token_type_ids
             )
 
-            fin_targets.extend(targets.cpu().detach().numpy().to_list())
-            fin_targets.extend(torch.sigmoid(output).cpu().detach().numpy().to_list())
+            fin_targets.extend(targets.cpu().detach())
+            fin_output.extend(torch.sigmoid(output).cpu().detach())
 
-        return fin_output, fin_targets
+        return torch.stack(fin_output), torch.stack(fin_targets)

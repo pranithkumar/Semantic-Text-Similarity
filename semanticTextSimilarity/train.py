@@ -25,17 +25,11 @@ def train_func(data_loader, model, optimizer, device, scheduler):
             token_type_ids = token_type_ids
         )
 
-
-        loss = loss_fn(output, targets)
+        loss = model.loss_fn(output, targets)
         loss.backward()
 
         optimizer.step()
         scheduler.step()
-
-def loss_fn(output, targets):
-    return nn.BCEWithLogitsLoss()(output, targets.view(-1,1))
-
-
 
 if __name__ == '__main__':
     # train_func()
