@@ -22,7 +22,7 @@ from test import eval_func
 from train import train_func
 
 def run():
-    df = pd.read_json('data/snli_1.0/snli_1.0_dev.jsonl', lines=True)
+    df = pd.read_json('data/snli_1.0/snli_1.0_train.jsonl', lines=True)
     df['contradiction'] = np.where(df['gold_label'] == 'contradiction', 1, 0)
     df['neutral'] = np.where(df['gold_label'] == 'neutral', 1, 0)
     df['entailment'] = np.where(df['gold_label'] == 'entailment', 1, 0)
@@ -54,7 +54,7 @@ def run():
 
     train_data_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=8,
+        batch_size=100,
         num_workers=4,
     )
 

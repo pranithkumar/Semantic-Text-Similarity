@@ -13,7 +13,8 @@ class BERTClassification(nn.Module):
 
     def forward(self, ids, mask, token_type_ids):
         torch.cuda.empty_cache()
-        d1, pooledOut = self.bert(ids, attention_mask=mask,
+        with torch.no_grad():
+            d1, pooledOut = self.bert(ids, attention_mask=mask,
                                  token_type_ids=token_type_ids, return_dict=False)
         bertOut = self.bert_drop(pooledOut)
         # print(d1)
