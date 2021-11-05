@@ -5,7 +5,8 @@ from collections import Counter
 from typing import List, Dict, Tuple, Any
 from tqdm import tqdm
 import numpy as np
-import spacy, json
+import spacy
+import json
 
 
 nlp = spacy.load("en_core_web_sm", disable=['ner', 'tagger', 'parser', 'textcat'])
@@ -20,6 +21,9 @@ class DATALoader:
         self.max_length = max_length
         self.data1_tokens = data1_tokens
         self.data2_tokens = data2_tokens
+
+        self.data1_max_length = max([len(x) for x in self.data1_tokens])
+        self.data2_max_length = max([len(x) for x in self.data2_tokens])
 
     def __len__(self):
         return len(self.data1)
@@ -54,10 +58,20 @@ class DATALoader:
         # mask = mask[0] + mask[1]
         # token_type_ids = token_type_ids[0] + token_type_ids[1]
 
-        data1_max_length = max([len(x) for x in self.data1_tokens])
-        data2_max_length = max([len(x) for x in self.data2_tokens])
-        data1_token_ids = np.array([np.pad(x, (0, data1_max_length - len(x)), 'constant', constant_values=-1) for x in self.data1_tokens])
-        data2_token_ids = np.array([np.pad(x, (0, data2_max_length - len(x)), 'constant', constant_values=-1) for x in self.data2_tokens])
+        data1_token_ids = np.zeros(self.data1_max_length)
+        data2_token_ids = np.zeros(self.data2_max_length)
+        data1_token_ids[:len(self.data1_tokens[item])] = self.data1_tokens[item]
+        data2_token_ids[:len(self.data2_tokens[item])] = self.data2_tokens[item]
+        # data1_token_ids = np.pad(self.data1_tokens[item], (0, self.data1_max_length - len(self.data1_tokens[item])), 'constant', constant_values=-1)
+        # data2_token_ids = np.pad(self.data2_tokens[item], (0, self.data2_max_length - len(self.data1_tokens[item])), 'constant', constant_values=-1)
+        data1_mask = np.zeros(self.data1_max_length)
+        data2_mask = np.zeros(self.data2_max_length)
+        data1_mask[:len(self.data1_tokens[item])] = 1
+        data2_mask[:len(self.data2_tokens[item])] = 1
+        # for i in range(len(data1_mask)):
+        #     data1_mask[i][0:len(self.data1_tokens[i])] = 1
+        # for i in range(len(data2_mask)):
+        #     data2_mask[i][0:len(self.data2_tokens[i])] = 1
 
         return {
             'ids': torch.tensor(ids, dtype=torch.long),
@@ -65,7 +79,9 @@ class DATALoader:
             'token_type_ids': torch.tensor(token_type_ids, dtype=torch.long),
             'targets': torch.tensor(self.target[item], dtype=torch.long),
             'data1_token_ids': torch.tensor(data1_token_ids, dtype=torch.long),
-            'data2_token_ids': torch.tensor(data2_token_ids, dtype=torch.long)
+            'data2_token_ids': torch.tensor(data2_token_ids, dtype=torch.long),
+            'data1_mask': torch.tensor(data1_mask),
+            'data2_mask': torch.tensor(data2_mask)
         }
 
 

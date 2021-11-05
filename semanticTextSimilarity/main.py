@@ -13,6 +13,8 @@ from bertmodel import BERTClassification
 from data import *
 from test import eval_func
 from train import train_func
+import torch
+import torch.nn as nn
 
 if __name__ == '__main__':
     # Setup parser arguments
@@ -32,13 +34,14 @@ if __name__ == '__main__':
     # Set max number of tokens and vocab size
     MAX_NUM_TOKENS = 250
     VOCAB_SIZE = 10000
+    EMBEDDING_DIM = 50
 
     # Load pre-trained glove embeddings
     train_instances = read_instances(args.train_data_file_path, MAX_NUM_TOKENS)
     with open('data/glove_common_words.txt', encoding='utf-8') as file:
         glove_common_words = [line.strip() for line in file.readlines() if line.strip()]
     vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, VOCAB_SIZE, glove_common_words)
-    embeddings = load_glove_embeddings('data/glove.6B.50d.txt', 50, vocab_id_to_token)
+    embeddings = load_glove_embeddings('data/glove.6B.50d.txt', EMBEDDING_DIM, vocab_id_to_token)
     train_instances = index_instances(train_instances, vocab_token_to_id)
 
     # Load train dataset
@@ -78,7 +81,12 @@ if __name__ == '__main__':
 
     val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=4, num_workers=1)
 
-    model = BERTClassification()
+    model = BERTClassification(
+        device=device,
+        vocab_size=min(VOCAB_SIZE, len(vocab_token_to_id)),
+        embedding_dim=EMBEDDING_DIM)
+
+    model.embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=False)
 
     param_optimizer = list(model.named_parameters())
     no_decay = ["bias", "LayerNorm,bias", "LayerNorm.weight"]

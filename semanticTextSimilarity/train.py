@@ -14,6 +14,8 @@ def train_func(data_loader, model, optimizer, device, scheduler):
         targets = d["targets"]
         data1_token_ids = d["data1_token_ids"]
         data2_token_ids = d["data2_token_ids"]
+        data1_mask = d['data1_mask']
+        data2_mask = d['data2_mask']
 
         ids = ids.to(device, dtype=torch.long)
         token_type_ids = token_type_ids.to(device, dtype=torch.long)
@@ -21,6 +23,8 @@ def train_func(data_loader, model, optimizer, device, scheduler):
         targets = targets.to(device, dtype=torch.float)
         data1_token_ids = data1_token_ids.to(device, dtype=torch.long)
         data2_token_ids = data2_token_ids.to(device, dtype=torch.long)
+        data1_mask = data1_mask.to(device, dtype=torch.long)
+        data2_mask = data2_mask.to(device, dtype=torch.long)
 
         optimizer.zero_grad()
         output = model(
@@ -28,7 +32,9 @@ def train_func(data_loader, model, optimizer, device, scheduler):
             mask=mask,
             token_type_ids=token_type_ids,
             data1_token_ids=data1_token_ids,
-            data2_token_ids=data2_token_ids
+            data2_token_ids=data2_token_ids,
+            data1_mask=data1_mask,
+            data2_mask=data2_mask
         )
 
         loss = model.loss_fn(output, targets)
