@@ -19,7 +19,7 @@ import torch.nn as nn
 if __name__ == '__main__':
     # Setup parser arguments
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_dev.jsonl',
+    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_train.jsonl',
                         help='training data file path')
     parser.add_argument('--batch-size', type=int, default=64, help='batch size')
     parser.add_argument('--num-epochs', type=int, default=20, help='max num epochs to train for')
@@ -43,11 +43,13 @@ if __name__ == '__main__':
     vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, VOCAB_SIZE, glove_common_words)
     embeddings = load_glove_embeddings('data/glove.6B.50d.txt', EMBEDDING_DIM, vocab_id_to_token)
     train_instances = index_instances(train_instances, vocab_token_to_id)
+    save_vocabulary(vocab_id_to_token, 'models/vocab.txt')
 
     # Load train dataset
     # df = pd.read_json(args.train_data_file_path, lines=True)
     df = pd.DataFrame(train_instances)
-    # df = df.head(150)
+    df = df.head(int(len(df)*(25/100)))
+    # df = df.head(2000)
     df['contradiction'] = np.where(df['gold_label'] == 'contradiction', 1, 0)
     df['neutral'] = np.where(df['gold_label'] == 'neutral', 1, 0)
     df['entailment'] = np.where(df['gold_label'] == 'entailment', 1, 0)
@@ -72,7 +74,7 @@ if __name__ == '__main__':
                                data1_tokens=df_train.sentence1_token_ids.values,
                                data2_tokens=df_train.sentence2_token_ids.values)
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=40, num_workers=2)
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=15, num_workers=4)
 
     val_dataset = DATALoader(data1=df_valid.sentence1.values, data2=df_valid.sentence2.values,
                              target=df_valid.label.values, max_length=512,
@@ -80,13 +82,13 @@ if __name__ == '__main__':
                              data2_tokens=df_valid.sentence2_token_ids.values)
 
     val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=4, num_workers=1)
-
+    # print(len(vocab_token_to_id))
     model = BERTClassification(
         device=device,
         vocab_size=min(VOCAB_SIZE, len(vocab_token_to_id)),
         embedding_dim=EMBEDDING_DIM)
 
-    model.embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=False)
+    embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=True)
 
     param_optimizer = list(model.named_parameters())
     no_decay = ["bias", "LayerNorm,bias", "LayerNorm.weight"]
@@ -104,8 +106,8 @@ if __name__ == '__main__':
 
     best_accuracy = 0
     for epoch in range(5):
-        train_func(data_loader=train_data_loader, model=model, optimizer=optimizers, device=device, scheduler=scheduler)
-        outputs, targets = eval_func(data_loader=val_data_loader, model=model, device=device)
+        train_func(data_loader=train_data_loader, model=model, optimizer=optimizers, device=device, scheduler=scheduler, embedding_layer=embedding_layer)
+        outputs, targets = eval_func(data_loader=val_data_loader, model=model, device=device, embedding_layer=embedding_layer)
         accuracy = metrics.accuracy_score(targets.argmax(1), outputs.argmax(1))
         print(f"Accuracy Score: {accuracy}")
 

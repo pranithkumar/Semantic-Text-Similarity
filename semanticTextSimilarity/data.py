@@ -197,6 +197,32 @@ def build_vocabulary(instances: List[Dict],
     id_to_token = dict(zip(token_to_id.values(), token_to_id.keys()))
     return token_to_id, id_to_token
 
+def save_vocabulary(vocab_id_to_token: Dict[int, str], vocabulary_path: str) -> None:
+    """
+    Saves vocabulary to vocabulary_path.
+    """
+    with open(vocabulary_path, "w", encoding='utf-8') as file:
+        # line number is the index of the token
+        for idx in range(len(vocab_id_to_token)):
+            file.write(vocab_id_to_token[idx] + "\n")
+        file.write("ammaarey\n")
+        file.close()
+
+def load_vocabulary(vocabulary_path: str) -> Tuple[Dict[str, int], Dict[int, str]]:
+    """
+    Loads vocabulary from vocabulary_path.
+    """
+    vocab_id_to_token = {}
+    vocab_token_to_id = {}
+    with open(vocabulary_path, "r", encoding='utf-8') as file:
+        for index, token in enumerate(file):
+            token = token.strip()
+            if not token:
+                # print("123", token)
+                continue
+            vocab_id_to_token[index] = token
+            vocab_token_to_id[token] = index
+    return (vocab_token_to_id, vocab_id_to_token)
 
 def load_glove_embeddings(embeddings_txt_file: str,
                           embedding_dim: int,
