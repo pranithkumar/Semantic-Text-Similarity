@@ -49,7 +49,7 @@ if __name__ == '__main__':
     # df = pd.read_json(args.train_data_file_path, lines=True)
     df = pd.DataFrame(train_instances)
     df = df.head(int(len(df)*(25/100)))
-    # df = df.head(2000)
+    df = df.head(100)
     df['contradiction'] = np.where(df['gold_label'] == 'contradiction', 1, 0)
     df['neutral'] = np.where(df['gold_label'] == 'neutral', 1, 0)
     df['entailment'] = np.where(df['gold_label'] == 'entailment', 1, 0)

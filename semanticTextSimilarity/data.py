@@ -7,6 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import spacy
 import json
+from transformers import AutoTokenizer
 
 
 nlp = spacy.load("en_core_web_sm", disable=['ner', 'tagger', 'parser', 'textcat'])
@@ -17,7 +18,8 @@ class DATALoader:
         self.data1 = data1
         self.data2 = data2
         self.target = target  # make sure to convert the target into numerical values
-        self.tokenizer = transformers.AlbertTokenizer.from_pretrained('albert-base-v2')
+        # self.tokenizer = transformers.AlbertTokenizer.from_pretrained('albert-base-v2')
+        self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
         self.max_length = max_length
         self.data1_tokens = data1_tokens
         self.data2_tokens = data2_tokens
@@ -36,14 +38,22 @@ class DATALoader:
         data2 = " ".join(data2.split())
 
         inputs = self.tokenizer(
-            data1,
-            data2,
+            [data1, data2],
             add_special_tokens=True,
             max_length=self.max_length,
             padding='max_length',
             truncation=True
-            # return_tensors='pt'
         )
+        # Albert
+        # inputs = self.tokenizer(
+        #     data1,
+        #     data2,
+        #     add_special_tokens=True,
+        #     max_length=self.max_length,
+        #     padding='max_length',
+        #     truncation=True
+        #     # return_tensors='pt'
+        # )
 
         ids = inputs["input_ids"]
         mask = inputs['attention_mask']
@@ -62,8 +72,7 @@ class DATALoader:
         data2_token_ids = np.zeros(self.data2_max_length)
         data1_token_ids[:len(self.data1_tokens[item])] = self.data1_tokens[item]
         data2_token_ids[:len(self.data2_tokens[item])] = self.data2_tokens[item]
-        # data1_token_ids = np.pad(self.data1_tokens[item], (0, self.data1_max_length - len(self.data1_tokens[item])), 'constant', constant_values=-1)
-        # data2_token_ids = np.pad(self.data2_tokens[item], (0, self.data2_max_length - len(self.data1_tokens[item])), 'constant', constant_values=-1)
+
         data1_mask = np.zeros(self.data1_max_length)
         data2_mask = np.zeros(self.data2_max_length)
         data1_mask[:len(self.data1_tokens[item])] = 1
@@ -74,9 +83,12 @@ class DATALoader:
         #     data2_mask[i][0:len(self.data2_tokens[i])] = 1
 
         return {
-            'ids': torch.tensor(ids, dtype=torch.long),
-            'mask': torch.tensor(mask, dtype=torch.long),
-            'token_type_ids': torch.tensor(token_type_ids, dtype=torch.long),
+            'data1_ids': torch.tensor(ids[0], dtype=torch.long),
+            'data1_bert_mask': torch.tensor(mask[0], dtype=torch.long),
+            'data1_token_type_ids': torch.tensor(token_type_ids[0], dtype=torch.long),
+            'data2_ids': torch.tensor(ids[1], dtype=torch.long),
+            'data2_bert_mask': torch.tensor(mask[1], dtype=torch.long),
+            'data2_token_type_ids': torch.tensor(token_type_ids[1], dtype=torch.long),
             'targets': torch.tensor(self.target[item], dtype=torch.long),
             'data1_token_ids': torch.tensor(data1_token_ids, dtype=torch.long),
             'data2_token_ids': torch.tensor(data2_token_ids, dtype=torch.long),
