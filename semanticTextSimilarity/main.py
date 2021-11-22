@@ -48,7 +48,6 @@ if __name__ == '__main__':
     VOCAB_SIZE = args.vocab_size
     EMBEDDING_DIM = args.emb_size
     embedding_layer = None
-    print(args.include_glove)
     # Load pre-trained glove embeddings
     # vocab_id_to_token, data = get_data_frame(args.train_data_file_path, args.include_glove, MAX_NUM_TOKENS, VOCAB_SIZE, EMBEDDING_DIM, device)
     if args.include_glove:
@@ -89,8 +88,8 @@ if __name__ == '__main__':
     df_train = df_train.reset_index(drop=True)
     df_valid = df_valid.reset_index(drop=True)
 
-    train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model)
-    val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model)
+    train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
+    val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4)
     val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, num_workers=1)
