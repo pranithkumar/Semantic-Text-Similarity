@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
 import transformers
+from transformers import AutoTokenizer, AlbertTokenizer
 from collections import Counter
 from typing import List, Dict, Tuple, Any
 from tqdm import tqdm
@@ -9,7 +10,8 @@ import spacy
 import json
 import shutil
 import random
-
+import torch
+import torch.nn as nn
 seed_val = 1337
 
 random.seed(seed_val)
@@ -21,8 +23,12 @@ nlp = spacy.load("en_core_web_sm", disable=['ner', 'tagger', 'parser', 'textcat'
 
 
 class DATALoader:
-    def __init__(self, data, max_length, glove_model=False):
-        self.tokenizer = transformers.AlbertTokenizer.from_pretrained('albert-base-v2')
+    def __init__(self, data, max_length, glove_model=False, model_name='albert', device='cpu'):
+        self.model_name = model_name
+        if model_name == 'albert':
+            self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
+        elif model_name == 'sbert':
+            self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
         self.data1 = data.sentence1.values
         self.data2 = data.sentence2.values
         self.target = data.label.values
@@ -35,6 +41,7 @@ class DATALoader:
             self.data2_max_length = max([len(x) for x in self.data2_tokens])
         else:
             self.data1_tokens, self.data2_tokens, self.data1_max_length, self.data2_max_length = None, None, None, None
+        self.device = device
 
     def __len__(self):
         return len(self.data1)
@@ -46,47 +53,68 @@ class DATALoader:
         data2 = str(self.data2[item])
         data2 = " ".join(data2.split())
 
-        inputs = self.tokenizer(
-            data1,
-            data2,
-            add_special_tokens=True,
-            max_length=self.max_length,
-            padding='max_length',
-            truncation=True
-            # return_tensors='pt'
-        )
+        bert_inputs = None
+        glove_inputs = None
 
-        ids = inputs["input_ids"]
-        mask = inputs['attention_mask']
-        token_type_ids = inputs["token_type_ids"]
+        if self.model_name == 'albert':
+            inputs = self.tokenizer(
+                data1,
+                data2,
+                add_special_tokens=True,
+                max_length=self.max_length,
+                padding='max_length',
+                truncation=True
+                # return_tensors='pt'
+            )
 
-        if not self.glove_model:
-            return {
-                'ids': torch.tensor(ids, dtype=torch.long),
-                'mask': torch.tensor(mask, dtype=torch.long),
-                'token_type_ids': torch.tensor(token_type_ids, dtype=torch.long),
-                'targets': torch.tensor(self.target[item], dtype=torch.long)
+            bert_inputs = {
+                'ids': torch.tensor(inputs["input_ids"], dtype=torch.long, device=self.device),
+                'bert_mask': torch.tensor(inputs['attention_mask'], dtype=torch.long, device=self.device),
+                'token_type_ids': torch.tensor(inputs["token_type_ids"], dtype=torch.long, device=self.device)
+            }
+        elif self.model_name == 'sbert':
+            inputs = self.tokenizer(
+                [data1, data2],
+                add_special_tokens=True,
+                max_length=self.max_length,
+                padding='max_length',
+                truncation=True
+            )
+
+            bert_inputs = {
+                'data1_ids': torch.tensor(inputs["input_ids"][0], dtype=torch.long, device=self.device),
+                'data1_bert_mask': torch.tensor(inputs['attention_mask'][0], dtype=torch.long, device=self.device),
+                'data1_token_type_ids': torch.tensor(inputs["token_type_ids"][0], dtype=torch.long, device=self.device),
+                'data2_ids': torch.tensor(inputs["input_ids"][1], dtype=torch.long, device=self.device),
+                'data2_bert_mask': torch.tensor(inputs['attention_mask'][1], dtype=torch.long, device=self.device),
+                'data2_token_type_ids': torch.tensor(inputs["token_type_ids"][1], dtype=torch.long, device=self.device)
             }
 
-        data1_token_ids = np.zeros(self.data1_max_length)
-        data2_token_ids = np.zeros(self.data2_max_length)
-        data1_token_ids[:len(self.data1_tokens[item])] = self.data1_tokens[item]
-        data2_token_ids[:len(self.data2_tokens[item])] = self.data2_tokens[item]
+        if self.glove_model:
+            data1_token_ids = np.zeros(self.data1_max_length)
+            data2_token_ids = np.zeros(self.data2_max_length)
+            data1_token_ids[:len(self.data1_tokens[item])] = self.data1_tokens[item]
+            data2_token_ids[:len(self.data2_tokens[item])] = self.data2_tokens[item]
 
-        data1_mask = np.zeros(self.data1_max_length)
-        data2_mask = np.zeros(self.data2_max_length)
-        data1_mask[:len(self.data1_tokens[item])] = 1
-        data2_mask[:len(self.data2_tokens[item])] = 1
+            data1_mask = np.zeros(self.data1_max_length)
+            data2_mask = np.zeros(self.data2_max_length)
+            data1_mask[:len(self.data1_tokens[item])] = 1
+            data2_mask[:len(self.data2_tokens[item])] = 1
+            glove_inputs = {
+                'data1_token_ids': torch.tensor(data1_token_ids, dtype=torch.long, device=self.device),
+                'data2_token_ids': torch.tensor(data2_token_ids, dtype=torch.long, device=self.device),
+                'data1_mask': torch.tensor(data1_mask, device=self.device),
+                'data2_mask': torch.tensor(data2_mask, device=self.device)
+            }
+            return {
+                "bert_input": bert_inputs,
+                "glove_inputs": glove_inputs,
+                "targets": torch.tensor(self.target[item], device=self.device)
+            }
 
         return {
-            'ids': torch.tensor(ids, dtype=torch.long),
-            'mask': torch.tensor(mask, dtype=torch.long),
-            'token_type_ids': torch.tensor(token_type_ids, dtype=torch.long),
-            'targets': torch.tensor(self.target[item], dtype=torch.long),
-            'data1_token_ids': torch.tensor(data1_token_ids, dtype=torch.long),
-            'data2_token_ids': torch.tensor(data2_token_ids, dtype=torch.long),
-            'data1_mask': torch.tensor(data1_mask),
-            'data2_mask': torch.tensor(data2_mask)
+            "bert_input": bert_inputs,
+            "targets": torch.tensor(self.target[item], device=self.device)
         }
 
 def read_instances(data_file_path: str,
@@ -277,3 +305,29 @@ def load_ckp(model, optimizer, scheduler, device, checkpoint_path='checkpoints/c
     optimizer.load_state_dict(checkpoint['optimizer'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     return model, optimizer, scheduler, checkpoint['epoch']
+
+def get_data_frame(filepath, glove_embeddings, num_tokens, vocab_size, embedding_dim, device):
+    if glove_embeddings:
+        train_instances = read_instances(filepath, num_tokens)
+        with open('data/glove_common_words.txt', encoding='utf-8') as file:
+            glove_common_words = [line.strip() for line in file.readlines() if line.strip()]
+        vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, vocab_size, glove_common_words)
+        train_instances = index_instances(train_instances, vocab_token_to_id)
+        save_vocabulary(vocab_id_to_token, 'models/vocab.txt')
+        df = pd.DataFrame(train_instances)
+        data = pd.DataFrame({
+            'sentence1': df['sentence1'],
+            'sentence2': df['sentence2'],
+            'gold_label': df['gold_label'],
+            'sentence1_token_ids': df['sentence1_token_ids'],
+            'sentence2_token_ids': df['sentence2_token_ids']
+        })
+        return vocab_token_to_id, data
+    else:
+        df = pd.read_json(filepath, lines=True)
+        data = pd.DataFrame({
+            'sentence1': df['sentence1'],
+            'sentence2': df['sentence2'],
+            'gold_label': df['gold_label']
+        })
+        return None, data

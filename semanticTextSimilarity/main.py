@@ -10,7 +10,7 @@ from sklearn import metrics
 import argparse
 
 # Project libraries
-from bertmodel import BERTClassification
+from bertmodel import BERTClassification, SBERTClassification
 from data import *
 from test import eval_func
 from train import train_func
@@ -25,7 +25,7 @@ torch.cuda.manual_seed_all(seed_val)
 if __name__ == '__main__':
     # Setup parser arguments
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--model', type=str, default='pretrained_albert', help='model to train')
+    parser.add_argument('--model', type=str, default='sbert', help='model to train')
     parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_dev.jsonl',
                         help='training data file path')
     parser.add_argument('--max_tokens', type=str, default=512, help='Maximum number of tokens')
@@ -48,14 +48,16 @@ if __name__ == '__main__':
     VOCAB_SIZE = args.vocab_size
     EMBEDDING_DIM = args.emb_size
     embedding_layer = None
-
+    print(args.include_glove)
     # Load pre-trained glove embeddings
+    # vocab_id_to_token, data = get_data_frame(args.train_data_file_path, args.include_glove, MAX_NUM_TOKENS, VOCAB_SIZE, EMBEDDING_DIM, device)
     if args.include_glove:
         train_instances = read_instances(args.train_data_file_path, MAX_NUM_TOKENS)
         with open('data/glove_common_words.txt', encoding='utf-8') as file:
             glove_common_words = [line.strip() for line in file.readlines() if line.strip()]
         vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, VOCAB_SIZE, glove_common_words)
-        embeddings = load_glove_embeddings('data/glove.6B.' + str(EMBEDDING_DIM) + 'd.txt', EMBEDDING_DIM, vocab_id_to_token)
+        embeddings = load_glove_embeddings('data/glove.6B.' + str(EMBEDDING_DIM) + 'd.txt', EMBEDDING_DIM,
+                                           vocab_id_to_token)
         embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=True)
         train_instances = index_instances(train_instances, vocab_token_to_id)
         save_vocabulary(vocab_id_to_token, 'models/vocab.txt')
@@ -74,8 +76,8 @@ if __name__ == '__main__':
             'sentence2': df['sentence2'],
             'gold_label': df['gold_label']
         })
-
     data = data.head(int(len(data) * (1 / 100)))
+    # data = data.head(20)
     data['contradiction'] = np.where(data['gold_label'] == 'contradiction', 1, 0)
     data['neutral'] = np.where(data['gold_label'] == 'neutral', 1, 0)
     data['entailment'] = np.where(data['gold_label'] == 'entailment', 1, 0)
@@ -87,14 +89,16 @@ if __name__ == '__main__':
     df_train = df_train.reset_index(drop=True)
     df_valid = df_valid.reset_index(drop=True)
 
-    train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove)
-    val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove)
+    train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model)
+    val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model)
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4)
     val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, num_workers=1)
-
-    model = BERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove, embedding_dim=EMBEDDING_DIM)
-
+    if args.model == 'albert':
+        model = BERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove, embedding_dim=EMBEDDING_DIM)
+    elif args.model == 'sbert':
+        model = SBERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove,
+                                   embedding_dim=EMBEDDING_DIM)
     param_optimizer = list(model.named_parameters())
     no_decay = ["bias", "LayerNorm,bias", "LayerNorm.weight"]
     optimizer_parameters = [
