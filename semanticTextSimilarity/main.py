@@ -107,7 +107,7 @@ if __name__ == '__main__':
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)],
          'weight_decay': 0.0}]
 
-    num_train_steps = len(train_data_loader) * 5
+    num_train_steps = len(train_data_loader) * args.num_epochs
 
     optimizer = AdamW(optimizer_parameters, lr=3e-5)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=num_train_steps)
