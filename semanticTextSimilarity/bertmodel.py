@@ -76,13 +76,13 @@ class SBERTClassification(nn.Module):
 
     def __init__(self, bert_trainable=True, glove_model=False, embedding_dim=0):
         super(SBERTClassification, self).__init__()
-        self.bert = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+        self.bert = AutoModel.from_pretrained('sentence-transformers/all-distilroberta-v1')
         self.bert_drop = nn.Dropout(0.1)
         self.glove_model = glove_model
         if glove_model:
-            self.out = nn.Linear(384 * 3 + 3 * embedding_dim, 3)
+            self.out = nn.Linear(768 * 3 + 3 * embedding_dim, 3)
         else:
-            self.out = nn.Linear(384 * 3, 3)
+            self.out = nn.Linear(768 * 3, 3)
         # self.cross_entropy = nn.CrossEntropyLoss()
         self.bce_loss = nn.BCEWithLogitsLoss()
         self._init_weights(self.out)
@@ -92,19 +92,27 @@ class SBERTClassification(nn.Module):
                 p.requires_grad = False
 
     def forward(self, inputs, av1=None, av2=None):
-        _, pooledOut1 = self.bert(inputs['data1_ids'], attention_mask=inputs['data1_bert_mask'],
-                                  token_type_ids=inputs['data1_token_type_ids'], return_dict=False)
-        _, pooledOut2 = self.bert(inputs['data2_ids'], attention_mask=inputs['data2_bert_mask'],
-                                  token_type_ids=inputs['data2_token_type_ids'], return_dict=False)
-        # bertOut = self.bert_drop(pooledOut)
+        data_ids = torch.concat([inputs['data1_ids'], inputs['data2_ids']])
+        attention_mask = torch.concat([inputs['data1_bert_mask'], inputs['data2_bert_mask']])
+        token_embeddings, _ = self.bert(data_ids, attention_mask=attention_mask, return_dict=False)
+        pooledOut = self.mean_pooling(token_embeddings, attention_mask)
+
+        pooledOut = self.bert_drop(pooledOut)
+        pooledOut = torch.tensor_split(pooledOut, 2, 0)
+
         if self.glove_model:
-            concat = torch.cat((pooledOut1, pooledOut1, torch.subtract(pooledOut1, pooledOut2), av1, av2, torch.subtract(av1, av2)), dim=1)
+            concat = torch.cat((pooledOut[0], pooledOut[1], torch.subtract(pooledOut[0], pooledOut[1]), av1, av2, torch.subtract(av1, av2)), dim=1)
             output = self.out(concat.float())
         else:
-            concat = torch.cat((pooledOut1, pooledOut1, torch.subtract(pooledOut1, pooledOut2)), dim=1)
+            concat = torch.cat((pooledOut[0], pooledOut[1], torch.subtract(pooledOut[0], pooledOut[1])), dim=1)
             output = self.out(concat.float())
 
         return output
+
+    def mean_pooling(self, token_embeddings, attention_mask):
+        # token_embeddings = model_output[0]  # First element of model_output contains all token embeddings
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
     def loss_fn(self, output, targets):
         # return self.cross_entropy(output, targets.argmax(1))

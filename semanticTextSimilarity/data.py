@@ -28,7 +28,7 @@ class DATALoader:
         if model_name == 'albert':
             self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
         elif model_name == 'sbert':
-            self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+            self.tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-distilroberta-v1')
         self.data1 = data.sentence1.values
         self.data2 = data.sentence2.values
         self.target = data.label.values
@@ -84,10 +84,10 @@ class DATALoader:
             bert_inputs = {
                 'data1_ids': torch.tensor(inputs["input_ids"][0], dtype=torch.long, device=self.device),
                 'data1_bert_mask': torch.tensor(inputs['attention_mask'][0], dtype=torch.long, device=self.device),
-                'data1_token_type_ids': torch.tensor(inputs["token_type_ids"][0], dtype=torch.long, device=self.device),
+                # 'data1_token_type_ids': torch.tensor(inputs["token_type_ids"][0], dtype=torch.long, device=self.device),
                 'data2_ids': torch.tensor(inputs["input_ids"][1], dtype=torch.long, device=self.device),
-                'data2_bert_mask': torch.tensor(inputs['attention_mask'][1], dtype=torch.long, device=self.device),
-                'data2_token_type_ids': torch.tensor(inputs["token_type_ids"][1], dtype=torch.long, device=self.device)
+                'data2_bert_mask': torch.tensor(inputs['attention_mask'][1], dtype=torch.long, device=self.device)
+                # 'data2_token_type_ids': torch.tensor(inputs["token_type_ids"][1], dtype=torch.long, device=self.device)
             }
 
         if self.glove_model:

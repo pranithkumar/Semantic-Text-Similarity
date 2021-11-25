@@ -26,11 +26,11 @@ if __name__ == '__main__':
     # Setup parser arguments
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--model', type=str, default='sbert', help='model to train')
-    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_dev.jsonl',
+    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_train.jsonl',
                         help='training data file path')
     parser.add_argument('--max_tokens', type=str, default=512, help='Maximum number of tokens')
     parser.add_argument('--bert_trainable', type=bool, default=True, help='Train bert model')
-    parser.add_argument('--include_glove', type=bool, default=False, help='Train bert model')
+    parser.add_argument('--include_glove', type=bool, default=True, help='Train bert model')
     parser.add_argument('--vocab_size', type=int, default=10000, help='vocabulary size')
     parser.add_argument('--emb_size', type=int, default=50, help='embedding size')
     parser.add_argument('--batch_size', type=int, default=15, help='batch size')
@@ -48,6 +48,7 @@ if __name__ == '__main__':
     VOCAB_SIZE = args.vocab_size
     EMBEDDING_DIM = args.emb_size
     embedding_layer = None
+
     # Load pre-trained glove embeddings
     # vocab_id_to_token, data = get_data_frame(args.train_data_file_path, args.include_glove, MAX_NUM_TOKENS, VOCAB_SIZE, EMBEDDING_DIM, device)
     if args.include_glove:
@@ -75,7 +76,7 @@ if __name__ == '__main__':
             'sentence2': df['sentence2'],
             'gold_label': df['gold_label']
         })
-    data = data.head(int(len(data) * (1 / 100)))
+    data = data.head(int(len(data) * (25 / 100)))
     # data = data.head(20)
     data['contradiction'] = np.where(data['gold_label'] == 'contradiction', 1, 0)
     data['neutral'] = np.where(data['gold_label'] == 'neutral', 1, 0)
@@ -91,8 +92,8 @@ if __name__ == '__main__':
     train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
     val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4)
-    val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, num_workers=1)
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
+    val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
     if args.model == 'albert':
         model = BERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove, embedding_dim=EMBEDDING_DIM)
     elif args.model == 'sbert':
