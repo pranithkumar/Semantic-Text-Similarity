@@ -26,7 +26,7 @@ if __name__ == '__main__':
     # Setup parser arguments
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--model', type=str, default='sbert', help='model to train')
-    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_train.jsonl',
+    parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_dev.jsonl',
                         help='training data file path')
     parser.add_argument('--max_tokens', type=str, default=512, help='Maximum number of tokens')
     parser.add_argument('--bert_trainable', type=bool, default=True, help='Train bert model')
@@ -76,8 +76,8 @@ if __name__ == '__main__':
             'sentence2': df['sentence2'],
             'gold_label': df['gold_label']
         })
-    data = data.head(int(len(data) * (25 / 100)))
-    # data = data.head(20)
+    # data = data.head(int(len(data) * (25 / 100)))
+    data = data.head(20)
     data['contradiction'] = np.where(data['gold_label'] == 'contradiction', 1, 0)
     data['neutral'] = np.where(data['gold_label'] == 'neutral', 1, 0)
     data['entailment'] = np.where(data['gold_label'] == 'entailment', 1, 0)

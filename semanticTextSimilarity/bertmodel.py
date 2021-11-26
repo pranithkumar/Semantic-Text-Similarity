@@ -76,7 +76,8 @@ class SBERTClassification(nn.Module):
 
     def __init__(self, bert_trainable=True, glove_model=False, embedding_dim=0):
         super(SBERTClassification, self).__init__()
-        self.bert = AutoModel.from_pretrained('sentence-transformers/all-distilroberta-v1')
+        self.bert = AlbertModel.from_pretrained('albert-base-v2')
+        # self.bert = AutoModel.from_pretrained('sentence-transformers/all-distilroberta-v1')
         self.bert_drop = nn.Dropout(0.1)
         self.glove_model = glove_model
         if glove_model:
@@ -94,7 +95,9 @@ class SBERTClassification(nn.Module):
     def forward(self, inputs, av1=None, av2=None):
         data_ids = torch.concat([inputs['data1_ids'], inputs['data2_ids']])
         attention_mask = torch.concat([inputs['data1_bert_mask'], inputs['data2_bert_mask']])
-        token_embeddings, _ = self.bert(data_ids, attention_mask=attention_mask, return_dict=False)
+        token_embeddings, _ = self.bert(data_ids, attention_mask=attention_mask,
+                                        token_type_ids=torch.concat([inputs['data1_token_type_ids'], inputs['data2_token_type_ids']]),
+                                        return_dict=False)
         pooledOut = self.mean_pooling(token_embeddings, attention_mask)
 
         pooledOut = self.bert_drop(pooledOut)
