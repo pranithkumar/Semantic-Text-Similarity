@@ -118,8 +118,9 @@ class DATALoader:
             "targets": torch.tensor(self.target[item], device=self.device)
         }
 
+
 def read_instances(data_file_path: str,
-                   max_allowed_num_tokens: int = 150) -> List[Dict]:
+                   max_allowed_num_tokens: int = 150, glove_model = False) -> List[Dict]:
     """
     Reads raw classification dataset from a file and returns a list
     of dicts where each dict defines an instance.
@@ -139,12 +140,24 @@ def read_instances(data_file_path: str,
         for line in tqdm(file.readlines()):
             instance = json.loads(line.strip())
             instance = {key: instance[key] for key in ["sentence1", "sentence2", "gold_label"]}
-            tokens_sentence1 = [token.text.lower() for token in nlp.tokenizer(instance["sentence1"])][
-                               :max_allowed_num_tokens]
-            tokens_sentence2 = [token.text.lower() for token in nlp.tokenizer(instance["sentence2"])][
-                               :max_allowed_num_tokens]
-            instance["sentence1_tokens"] = tokens_sentence1
-            instance["sentence2_tokens"] = tokens_sentence2
+            # instance["sentence1_len"] = len(instance["sentence1"])
+            # instance["sentence2_len"] = len(instance["sentence2"])
+            # instance["total_len"] = instance["sentence1_len"] + instance["sentence2_len"]
+            if instance["gold_label"] == "contradiction":
+                instance["label"] = [1, 0, 0]
+            elif instance["gold_label"] == "neutral":
+                instance["label"] = [0, 1, 0]
+            elif instance["gold_label"] == "entailment":
+                instance["label"] = [0, 0, 1]
+            else:
+              continue
+            if glove_model:
+                tokens_sentence1 = [token.text.lower() for token in nlp.tokenizer(instance["sentence1"])][
+                                   :max_allowed_num_tokens]
+                tokens_sentence2 = [token.text.lower() for token in nlp.tokenizer(instance["sentence2"])][
+                                   :max_allowed_num_tokens]
+                instance["sentence1_tokens"] = tokens_sentence1
+                instance["sentence2_tokens"] = tokens_sentence2
             instances.append(instance)
     return instances
 
@@ -291,6 +304,121 @@ def load_glove_embeddings(embeddings_txt_file: str,
     return embedding_matrix
 
 
+def get_tokens(instance, tokenizer, device, glove_model, model_name, max_len):
+    data1 = str(instance["sentence1"])
+    data1 = " ".join(data1.split())
+
+    data2 = str(instance["sentence2"])
+    data2 = " ".join(data2.split())
+
+    if model_name == 'albert':
+        inputs = tokenizer(
+            data1,
+            data2,
+            add_special_tokens=True,
+            max_length=max_len,
+            padding='max_length',
+            truncation=True
+            # return_tensors='pt'
+        )
+        instance['ids'] = inputs["input_ids"]
+        instance['bert_mask'] = inputs['attention_mask']
+        instance['token_type_ids'] = inputs["token_type_ids"]
+    elif model_name == 'sbert':
+        inputs = tokenizer(
+            [data1, data2],
+            add_special_tokens=True,
+            max_length=max_len,
+            padding='max_length',
+            truncation=True
+        )
+        instance['data1_ids'] = inputs["input_ids"][0]
+        instance['data1_bert_mask'] = inputs['attention_mask'][0]
+        instance['data1_token_type_ids'] = inputs["token_type_ids"][0]
+        instance['data2_ids'] = inputs["input_ids"][1]
+        instance['data2_bert_mask'] = inputs['attention_mask'][1]
+        instance['data2_token_type_ids'] = inputs["token_type_ids"][1]
+
+    if glove_model:
+        data1_token_ids = np.zeros(max_len)
+        data2_token_ids = np.zeros(max_len)
+        data1_token_ids[:len(instance['sentence1_token_ids'])] = instance['sentence1_token_ids']
+        data2_token_ids[:len(instance['sentence2_token_ids'])] = instance['sentence2_token_ids']
+
+        data1_mask = np.zeros(max_len)
+        data2_mask = np.zeros(max_len)
+        data1_mask[:len(instance['sentence1_token_ids'])] = 1
+        data2_mask[:len(instance['sentence2_token_ids'])] = 1
+        instance['data1_token_ids'] = data1_token_ids.tolist()
+        instance['data2_token_ids'] = data2_token_ids.tolist()
+        instance['data1_mask'] = data1_mask.tolist()
+        instance['data2_mask'] = data2_mask.tolist()
+    instance['targets'] = instance['label']
+    return instance
+
+
+def generate_batches(instances: List[Dict], batch_size, device, glove_model, model_name):
+    """
+    Generates and returns batch of tensorized instances in a chunk of batch_size.
+    """
+    if model_name == 'albert':
+        tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
+    elif model_name == 'sbert':
+        tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
+
+    def chunk(items: List[Any], num: int):
+        return [items[index:index+num] for index in range(0, len(items), num)]
+    batches_of_instances = chunk(instances, batch_size)
+
+    batches = []
+    for batch_of_instances in tqdm(batches_of_instances):
+        max_lens = [(len(instance["sentence1"]), len(instance["sentence2"])) for instance in batch_of_instances]
+        max_data1 = max(max_lens, key=lambda x: x[0])[0]
+        max_data2 = max(max_lens, key=lambda x: x[1])[1]
+        max_tuple = max(max_lens, key=lambda x: x[0] + x[1])
+        max_len = max_tuple[0] + max_tuple[1]
+        if model_name == 'sbert':
+            max_len = max(max_data1, max_data2)
+        for index in range(len(batch_of_instances)):
+            batch_of_instances[index] = get_tokens(instance=batch_of_instances[index], tokenizer=tokenizer,
+                                                   device=device, glove_model=glove_model, model_name=model_name,
+                                                   max_len=max_len)
+        batch_of_instances = pd.DataFrame(batch_of_instances)
+        if model_name == 'albert':
+            bert_inputs = {
+                'ids': torch.tensor(batch_of_instances["ids"], dtype=torch.long, device=device),
+                'bert_mask': torch.tensor(batch_of_instances['bert_mask'], dtype=torch.long, device=device),
+                'token_type_ids': torch.tensor(batch_of_instances["token_type_ids"], dtype=torch.long, device=device)
+            }
+        elif model_name == 'sbert':
+            bert_inputs = {
+                'data1_ids': torch.tensor(batch_of_instances["data1_ids"], dtype=torch.long, device=device),
+                'data1_bert_mask': torch.tensor(batch_of_instances['data1_bert_mask'], dtype=torch.long, device=device),
+                'data1_token_type_ids': torch.tensor(batch_of_instances["data1_token_type_ids"], dtype=torch.long, device=device),
+                'data2_ids': torch.tensor(batch_of_instances["data2_ids"], dtype=torch.long, device=device),
+                'data2_bert_mask': torch.tensor(batch_of_instances['data2_bert_mask'], dtype=torch.long, device=device),
+                'data2_token_type_ids': torch.tensor(batch_of_instances["data2_token_type_ids"], dtype=torch.long, device=device)
+            }
+        if glove_model:
+            glove_inputs = {
+                'data1_token_ids': torch.tensor(batch_of_instances['data1_token_ids'], dtype=torch.long, device=device),
+                'data2_token_ids': torch.tensor(batch_of_instances['data2_token_ids'], dtype=torch.long, device=device),
+                'data1_mask': torch.tensor(batch_of_instances['data1_mask'], device=device),
+                'data2_mask': torch.tensor(batch_of_instances['data2_mask'], device=device)
+            }
+            batches.append({
+                "bert_input": bert_inputs,
+                "glove_inputs": glove_inputs,
+                "targets": torch.tensor(batch_of_instances['targets'], device=device)
+            })
+        else:
+            batches.append({
+                "bert_input": bert_inputs,
+                "targets": torch.tensor(batch_of_instances['targets'], device=device)
+            })
+    return batches
+
+
 def save_ckp(state, is_best: True, checkpoint_dir='checkpoints', best_model_dir='models'):
     f_path = checkpoint_dir + '/checkpoint.pt'
     torch.save(state, f_path)
@@ -306,6 +434,7 @@ def load_ckp(model, optimizer, scheduler, device, checkpoint_path='checkpoints/c
     optimizer.load_state_dict(checkpoint['optimizer'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     return model, optimizer, scheduler, checkpoint['epoch']
+
 
 def get_data_frame(filepath, glove_embeddings, num_tokens, vocab_size, embedding_dim, device):
     if glove_embeddings:

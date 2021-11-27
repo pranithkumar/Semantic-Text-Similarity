@@ -29,8 +29,8 @@ if __name__ == '__main__':
     parser.add_argument('--train_data_file_path', type=str, default='data/snli_1.0/snli_1.0_dev.jsonl',
                         help='training data file path')
     parser.add_argument('--max_tokens', type=str, default=512, help='Maximum number of tokens')
-    parser.add_argument('--bert_trainable', type=bool, default=True, help='Train bert model')
-    parser.add_argument('--include_glove', type=bool, default=True, help='Train bert model')
+    parser.add_argument('--bert_trainable', action="store_true", default=False, help='Train bert model')
+    parser.add_argument('--include_glove', action="store_true", default=False, help='Include glove embeddings')
     parser.add_argument('--vocab_size', type=int, default=10000, help='vocabulary size')
     parser.add_argument('--emb_size', type=int, default=50, help='embedding size')
     parser.add_argument('--batch_size', type=int, default=15, help='batch size')
@@ -51,49 +51,33 @@ if __name__ == '__main__':
 
     # Load pre-trained glove embeddings
     # vocab_id_to_token, data = get_data_frame(args.train_data_file_path, args.include_glove, MAX_NUM_TOKENS, VOCAB_SIZE, EMBEDDING_DIM, device)
+    data = read_instances(args.train_data_file_path, MAX_NUM_TOKENS, glove_model=args.include_glove)
     if args.include_glove:
-        train_instances = read_instances(args.train_data_file_path, MAX_NUM_TOKENS)
         with open('data/glove_common_words.txt', encoding='utf-8') as file:
             glove_common_words = [line.strip() for line in file.readlines() if line.strip()]
-        vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, VOCAB_SIZE, glove_common_words)
+        vocab_token_to_id, vocab_id_to_token = build_vocabulary(data, VOCAB_SIZE, glove_common_words)
         embeddings = load_glove_embeddings('data/glove.6B.' + str(EMBEDDING_DIM) + 'd.txt', EMBEDDING_DIM,
                                            vocab_id_to_token)
         embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=True)
-        train_instances = index_instances(train_instances, vocab_token_to_id)
+        train_instances = index_instances(data, vocab_token_to_id)
         save_vocabulary(vocab_id_to_token, 'models/vocab.txt')
-        df = pd.DataFrame(train_instances)
-        data = pd.DataFrame({
-            'sentence1': df['sentence1'],
-            'sentence2': df['sentence2'],
-            'gold_label': df['gold_label'],
-            'sentence1_token_ids': df['sentence1_token_ids'],
-            'sentence2_token_ids': df['sentence2_token_ids']
-        })
-    else:
-        df = pd.read_json(args.train_data_file_path, lines=True)
-        data = pd.DataFrame({
-            'sentence1': df['sentence1'],
-            'sentence2': df['sentence2'],
-            'gold_label': df['gold_label']
-        })
-    # data = data.head(int(len(data) * (25 / 100)))
-    data = data.head(20)
-    data['contradiction'] = np.where(data['gold_label'] == 'contradiction', 1, 0)
-    data['neutral'] = np.where(data['gold_label'] == 'neutral', 1, 0)
-    data['entailment'] = np.where(data['gold_label'] == 'entailment', 1, 0)
-    data['label'] = data[['contradiction', 'neutral', 'entailment']].values.tolist()
-    data.drop(['contradiction', 'neutral', 'entailment'], axis=1)
 
+    # data = data.head(int(len(data) * (25 / 100)))
+    data = data[:20]
+    data.sort(key=lambda x: len(x['sentence1']) + len(x['sentence2']), reverse=True)
     df_train, df_valid = train_test_split(data, test_size=0.1, random_state=seed_val)
 
-    df_train = df_train.reset_index(drop=True)
-    df_valid = df_valid.reset_index(drop=True)
+    print("Reading training data")
+    train_data_loader = generate_batches(df_train, batch_size=args.batch_size, device=device,
+                                         glove_model=args.include_glove, model_name=args.model)
+    print("Reading validation data")
+    val_data_loader = generate_batches(df_valid, batch_size=args.batch_size, device=device,
+                                       glove_model=args.include_glove, model_name=args.model)
+    # train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
+    # val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
 
-    train_dataset = DATALoader(data=df_train, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
-    val_dataset = DATALoader(data=df_valid, max_length=512, glove_model=args.include_glove, model_name=args.model, device=device)
-
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size)
-    val_data_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size)
+    # train_data_loader = torch.utils.data.DataLoader(df_train, batch_size=args.batch_size)
+    # val_data_loader = torch.utils.data.DataLoader(df_valid, batch_size=args.batch_size)
     if args.model == 'albert':
         model = BERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove, embedding_dim=EMBEDDING_DIM)
     elif args.model == 'sbert':

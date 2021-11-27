@@ -81,10 +81,10 @@ class SBERTClassification(nn.Module):
         self.bert_drop = nn.Dropout(0.1)
         self.glove_model = glove_model
         if glove_model:
-            self.out = nn.Linear(768 * 3 + 3 * embedding_dim, 3)
+            self.out = nn.Linear(768 * 3 + 3 * embedding_dim, 3, bias=False)
         else:
-            self.out = nn.Linear(768 * 3, 3)
-        # self.cross_entropy = nn.CrossEntropyLoss()
+            self.out = nn.Linear(768 * 3, 3, bias=False)
+        self.cross_entropy = nn.CrossEntropyLoss()
         self.bce_loss = nn.BCEWithLogitsLoss()
         self._init_weights(self.out)
         self._init_weights(self.bert)
@@ -93,21 +93,32 @@ class SBERTClassification(nn.Module):
                 p.requires_grad = False
 
     def forward(self, inputs, av1=None, av2=None):
-        data_ids = torch.concat([inputs['data1_ids'], inputs['data2_ids']])
-        attention_mask = torch.concat([inputs['data1_bert_mask'], inputs['data2_bert_mask']])
-        token_embeddings, _ = self.bert(data_ids, attention_mask=attention_mask,
-                                        token_type_ids=torch.concat([inputs['data1_token_type_ids'], inputs['data2_token_type_ids']]),
+        # data_ids = torch.concat([inputs['data1_ids'], inputs['data2_ids']])
+        # attention_mask = torch.concat([inputs['data1_bert_mask'], inputs['data2_bert_mask']])
+        # token_embeddings, _ = self.bert(data_ids, attention_mask=attention_mask,
+        #                                 token_type_ids=torch.concat([inputs['data1_token_type_ids'], inputs['data2_token_type_ids']]),
+        #                                 return_dict=False)
+        token_embeddings1, _ = self.bert(inputs['data1_ids'], attention_mask=inputs['data1_bert_mask'],
+                                        token_type_ids=inputs['data1_token_type_ids'],
                                         return_dict=False)
-        pooledOut = self.mean_pooling(token_embeddings, attention_mask)
+        token_embeddings2, _ = self.bert(inputs['data2_ids'], attention_mask=inputs['data2_bert_mask'],
+                                        token_type_ids=inputs['data2_token_type_ids'],
+                                        return_dict=False)
+        pooledOut1 = self.mean_pooling(token_embeddings1, inputs['data1_bert_mask'])
+        pooledOut2 = self.mean_pooling(token_embeddings2, inputs['data2_bert_mask'])
+        pooledOut1 = self.bert_drop(pooledOut1)
+        pooledOut2 = self.bert_drop(pooledOut2)
 
-        pooledOut = self.bert_drop(pooledOut)
-        pooledOut = torch.tensor_split(pooledOut, 2, 0)
+        # pooledOut = self.mean_pooling(token_embeddings, attention_mask)
+
+        # pooledOut = self.bert_drop(pooledOut)
+        # pooledOut = torch.tensor_split(pooledOut, 2, 0)
 
         if self.glove_model:
-            concat = torch.cat((pooledOut[0], pooledOut[1], torch.subtract(pooledOut[0], pooledOut[1]), av1, av2, torch.subtract(av1, av2)), dim=1)
+            concat = torch.cat((pooledOut1, pooledOut2, torch.abs(torch.subtract(pooledOut1, pooledOut2)), av1, av2, torch.abs(torch.subtract(av1, av2))), dim=1)
             output = self.out(concat.float())
         else:
-            concat = torch.cat((pooledOut[0], pooledOut[1], torch.subtract(pooledOut[0], pooledOut[1])), dim=1)
+            concat = torch.cat((pooledOut1, pooledOut2, torch.abs(torch.subtract(pooledOut1, pooledOut2))), dim=1)
             output = self.out(concat.float())
 
         return output
@@ -118,5 +129,5 @@ class SBERTClassification(nn.Module):
         return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
     def loss_fn(self, output, targets):
-        # return self.cross_entropy(output, targets.argmax(1))
-        return self.bce_loss(output, targets.float())
+        return self.cross_entropy(output, targets.argmax(1))
+        # return self.bce_loss(output, targets.float())
