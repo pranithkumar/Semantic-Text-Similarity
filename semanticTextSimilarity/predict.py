@@ -1,11 +1,11 @@
 import torch.nn as nn
 from sklearn import metrics
-import argparse
+import argparse, os
 
-from bertmodel import BERTClassification
+from bertmodel import BERTClassification, SBERTClassification
 from data import *
 from test import eval_func
-
+from scipy.stats import pearsonr
 import random
 
 seed_val = 1337
@@ -18,73 +18,54 @@ torch.cuda.manual_seed_all(seed_val)
 
 if __name__ == '__main__':
     # Setup parser arguments
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--test_data_file_path', type=str, default='data/snli_1.0/snli_1.0_test.jsonl',
-                        help='test data file path')
-    parser.add_argument('--model_path', type=str, default='models/model.bin', help='model path to load')
-    parser.add_argument('--max_tokens', type=str, default=512, help='Maximum number of tokens')
-    parser.add_argument('--bert_trainable', type=bool, default=True, help='Train bert model')
-    parser.add_argument('--include_glove', type=bool, default=False, help='Train bert model')
-    parser.add_argument('--vocab_size', type=int, default=10000, help='vocabulary size')
-    parser.add_argument('--emb_size', type=int, default=50, help='embedding size')
-    parser.add_argument('--batch_size', type=int, default=15, help='batch size')
-    parser.add_argument('--num_epochs', type=int, default=5, help='max num epochs to train for')
-    parser.add_argument('--suffix_name', type=str, default="",
-                        help='optional model name suffix. can be used to prevent name conflict '
-                             'in experiment output serialization directory')
+    parser = argparse.ArgumentParser(description='predict on bert/sbert Model')
+    parser.add_argument('--model_folder', type=str, required=True, help='Folder name which consists of the model.bin file to be loaded for prediction')
+    parser.add_argument('--dataset_name', type=str, required=True, choices=('snli', 'mednli', 'medSTS'), help='dataset name to be used for prediction')
     args = parser.parse_args()
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'Device: {device}')
 
+    train_data = torch.load(os.path.join(args.model_folder, "model.bin"))
+    
     # Set max number of tokens and vocab size
-    MAX_NUM_TOKENS = args.max_tokens
-    VOCAB_SIZE = args.vocab_size
-    EMBEDDING_DIM = args.emb_size
+    MAX_NUM_TOKENS = train_data['args'].max_tokens
+    VOCAB_SIZE = train_data['args'].vocab_size
+    EMBEDDING_DIM = train_data['args'].emb_size
     embedding_layer = None
 
-    # Load pre-trained glove embeddings
-    if args.include_glove:
-        train_instances = read_instances(args.train_data_file_path, MAX_NUM_TOKENS)
-        with open('data/glove_common_words.txt', encoding='utf-8') as file:
-            glove_common_words = [line.strip() for line in file.readlines() if line.strip()]
-        vocab_token_to_id, vocab_id_to_token = build_vocabulary(train_instances, VOCAB_SIZE, glove_common_words)
-        embeddings = load_glove_embeddings('data/glove.6B.' + str(EMBEDDING_DIM) + 'd.txt', EMBEDDING_DIM, vocab_id_to_token)
-        embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=True)
-        train_instances = index_instances(train_instances, vocab_token_to_id)
-        save_vocabulary(vocab_id_to_token, 'models/vocab.txt')
-        df = pd.DataFrame(train_instances)
-        df_test = pd.DataFrame({
-            'sentence1': df['sentence1'],
-            'sentence2': df['sentence2'],
-            'gold_label': df['gold_label'],
-            'sentence1_token_ids': df['sentence1_token_ids'],
-            'sentence2_token_ids': df['sentence2_token_ids']
-        })
-    else:
-        df = pd.read_json(args.train_data_file_path, lines=True)
-        df_test = pd.DataFrame({
-            'sentence1': df['sentence1'],
-            'sentence2': df['sentence2'],
-            'gold_label': df['gold_label']
-        })
-
-    df_test['contradiction'] = np.where(df_test['gold_label'] == 'contradiction', 1, 0)
-    df_test['neutral'] = np.where(df_test['gold_label'] == 'neutral', 1, 0)
-    df_test['entailment'] = np.where(df_test['gold_label'] == 'entailment', 1, 0)
-    df_test['label'] = df_test[['contradiction', 'neutral', 'entailment']].values.tolist()
-    df_test.drop(['contradiction', 'neutral', 'entailment'], axis=1)
-
-    df_test = df_test.reset_index(drop=True)
-
-    test_dataset = DATALoader(data=df_test, max_length=512, glove_model=args.include_glove)
-
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=4)
-
-    model = BERTClassification(bert_trainable=args.bert_trainable, glove_model=args.include_glove, embedding_dim=EMBEDDING_DIM)
-    model.load_state_dict(torch.load(args.model_path))
+    if train_data['args'].model.startswith('bert'):
+        model = BERTClassification(bert_trainable=train_data['args'].bert_trainable, glove_model=train_data['args'].include_glove,
+                                   embedding_dim=EMBEDDING_DIM, pretrained_model_name=train_data['args'].pretrained_model_name, model_name=train_data['args'].model)
+    elif train_data['args'].model.startswith('sbert'):
+        model = SBERTClassification(bert_trainable=train_data['args'].bert_trainable, glove_model=train_data['args'].include_glove,
+                                    embedding_dim=EMBEDDING_DIM, pretrained_model_name=train_data['args'].pretrained_model_name, model_name=train_data['args'].model)
+    
+    model.load_state_dict(train_data['model'])
     model.to(device)
+    # Load pre-trained glove embeddings
+    if args.dataset_name == 'snli':
+        data = read_instances('data/snli_1.0/snli_1.0_test.jsonl', MAX_NUM_TOKENS, glove_model=train_data['args'].include_glove)
+    elif args.dataset_name == 'medSTS':
+        data = read_instances_medSTS_test('data/medSTS/ClinicalSTS/clinicalSTS.test.txt', 'data/medSTS/ClinicalSTS/clinicalSTS.test.gs.sim.txt', MAX_NUM_TOKENS, glove_model=train_data['args'].include_glove)
+    elif args.dataset_name == 'mednli':
+        data = read_instances_mednil('data/mednli/test.tsv', MAX_NUM_TOKENS, glove_model=train_data['args'].include_glove)
 
-    outputs, targets = eval_func(data_loader=test_data_loader, model=model, device=device)
+    if train_data['args'].include_glove:
+        vocab_token_to_id, vocab_id_to_token = load_vocabulary(os.path.join(args.model_folder,'vocab.txt'))
+        embeddings = load_glove_embeddings('data/glove.6B.' + str(EMBEDDING_DIM) + 'd.txt', EMBEDDING_DIM,
+                                           vocab_id_to_token)
+        embedding_layer = nn.Embedding.from_pretrained(torch.Tensor(embeddings).to(device), freeze=True)
+        train_instances = index_instances(data, vocab_token_to_id)
+
+    data.sort(key=lambda x: len(x['sentence1']) + len(x['sentence2']), reverse=True)
+
+    print("Reading test data")
+    test_data_loader = generate_batches(data, batch_size=train_data['args'].batch_size, device=device,
+                                         glove_model=train_data['args'].include_glove, model_name=train_data['args'].model, pretrained_model_name=train_data['args'].pretrained_model_name)
+
+
+    outputs, targets = eval_func(data_loader=test_data_loader, model=model, device=device,
+                                    embedding_layer=embedding_layer, glove_model=train_data['args'].include_glove)
     accuracy = metrics.accuracy_score(targets.argmax(1), outputs.argmax(1))
     print(f"Accuracy Score: {accuracy}")

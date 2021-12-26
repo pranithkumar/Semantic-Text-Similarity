@@ -50,8 +50,4 @@ def train_func(data_loader, model, optimizer, device, scheduler, embedding_layer
 
         optimizer.step()
         scheduler.step()
-
-
-if __name__ == '__main__':
-    # train_func()
-    print("train")
+        

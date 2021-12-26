@@ -32,7 +32,7 @@ def eval_func(data_loader, model, device, embedding_layer=None, glove_model=Fals
                 av1 = torch.div(av1, torch.sum(glove_data['data1_mask'], dim=1).unsqueeze(-1))
                 av2 = torch.sum(torch.mul(s2Embeds, glove_data['data2_mask'].unsqueeze(-1)), dim=1)
                 av2 = torch.div(av2, torch.sum(glove_data['data2_mask'], dim=1).unsqueeze(-1))
-
+            
             output = model(
                 inputs=d['bert_input'],
                 av1=av1,
